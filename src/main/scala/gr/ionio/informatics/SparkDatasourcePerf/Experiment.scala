@@ -1,4 +1,8 @@
-import gr.ionio.informatics.SparkDatasourcePerf.{Parquet, Json, Datasource}
+package gr.ionio.informatics.SparkDatasourcePerf
+
+import java.util.Properties
+
+import gr.ionio.informatics.SparkDatasourcePerf.{Cassandra, Parquet, Json, Datasource}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{Path, FileSystem}
 import org.apache.spark.sql.SparkSession
@@ -27,6 +31,7 @@ abstract class Experiment(){
 
 /**
   * A load [[Experiment]] profiles the loading stage for various data-sources.
+  *
   * @param ds: The [[Datasource]], e.g. Parquet("hdfs://host:9000/path")
   */
 
@@ -37,8 +42,14 @@ case class Load(ds: Datasource) extends Experiment{
     val df = ds match {
       case Json(path) => Experiment.sqlContext.read.json(path)
       case Parquet(path) => Experiment.sqlContext.read.parquet(path)
+      case JDBC(host, db, table) => {
+        val jdbcURL= s"jdbc:postgresql://${host}:5432/${db}?user=postgres&password=postgres"
+        val props = new Properties()
+        props.setProperty("driver", "org.postgresql.Driver")
+        Experiment.sqlContext.read.jdbc(jdbcURL, table, props)
+      }
     }
-    val size = FileSystem.get(Experiment.conf).getContentSummary(new Path(ds.path)).getSpaceConsumed / 1000000.0
+    val size = Experiment.fs.getContentSummary(new Path(ds.path)).getSpaceConsumed / 1000000.0
     val end = (System.currentTimeMillis() - start) / 1000.0
 
     result.put("time", end)
@@ -49,7 +60,30 @@ case class Load(ds: Datasource) extends Experiment{
 
     this
   }
+}
 
+/**
+  * A move [[Experiment]] profiles a move operation from a datasource to another
+  *
+  * @param src: The source [[Datasource]], e.g. Parquet("hdfs://host:9000/path.parquet")
+  * @param dst: The destination [[Datasource]], e.g. Json("hdfs://host:9000/path.json")
+  */
+
+case class Move(src: Datasource, dst: Datasource) extends Experiment{
+  val srcDF = src match{
+    case Json(path) => Experiment.sqlContext.read.json(path)
+    case Parquet(path) => Experiment.sqlContext.read.parquet(path)
+  }
+  if (Experiment.fs.exists(new Path(dst.path))){
+    Experiment.fs.delete(new Path(dst.path), true)
+  }
+  override def run(): Move ={
+    dst match{
+      case Json(path) => srcDF.write.json(path)
+      case Parquet(path) => srcDF.write.parquet(path)
+    }
+    this
+  }
 }
 
 /**
@@ -61,8 +95,10 @@ object Experiment{
     .master("spark://master:7077")
     .config("spark.eventLog.enabled", "true").appName("Big Data Project").getOrCreate()
 
-  lazy val conf = new Configuration()
+  private lazy val conf = new Configuration()
   conf.set("fs.defaultFS", "hdfs://master:9000")
+
+  lazy val fs = FileSystem.get(Experiment.conf)
 
   /**
     *
@@ -71,7 +107,7 @@ object Experiment{
     *                   which a parquet file is being loaded located at hdfs://master:9000/tpch/tpch_parquet_5/customer
     */
   def runExperimentsFromFile(experiments: String): Unit = {
-    experiments.split("\n").foreach{l =>
+    val exps = experiments.split("\n").map{l =>
       val params = l.split(",")
       val source = params(0)
       val path = params(1)
@@ -79,20 +115,9 @@ object Experiment{
         case "parquet" => Parquet(path)
         case "json" => Json(path)
       }
-
-      println(Load(exp).run().result)
-
+      Load(exp).run()
     }
+    exps.foreach(_.run)
+    exps.foreach(experiment => println(experiment.getCommaSeperatedResult()))
   }
-}
-
-
-
-object Main extends App{
-  val sampleExps =
-    """parquet,hdfs://master:9000/tpch/tpch_parquet_5/customer
-      |parquet,hdfs://master:9000/tpch/tpch_parquet_20/customer
-      |parquet,hdfs://master:9000/tpch/tpch_parquet_50/customer""".stripMargin
-
-  Experiment.runExperimentsFromFile(sampleExps)
 }
