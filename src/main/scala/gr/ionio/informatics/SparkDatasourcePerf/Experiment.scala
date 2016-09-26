@@ -1,10 +1,12 @@
 package gr.ionio.informatics.SparkDatasourcePerf
 
+import java.io.BufferedWriter
+import java.nio.file.{StandardOpenOption, Paths, Files}
 import java.util.Properties
 
-import gr.ionio.informatics.SparkDatasourcePerf.{Cassandra, Parquet, Json, Datasource}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{Path, FileSystem}
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
 import scala.collection.mutable.HashMap
@@ -24,7 +26,16 @@ abstract class Experiment(){
       else
         csr += x
     })
+    csr=
+      s"${result.get("datasource").get},${result.get("columns").get},${result.get("rows").get},${result.get("size").get},${result.get("time").get}"
+
     csr
+  }
+
+  def writeToDisk() = {
+    if (!Files.exists(Paths.get("results.txt")))
+      Files.createFile(Paths.get("results.txt"))
+    Files.write(Paths.get("results.txt"), s"${this.getCommaSeperatedResult()}\n".getBytes(), StandardOpenOption.APPEND)
   }
   val result: HashMap[String, Any] =  new HashMap[String, Any]()
 }
@@ -38,22 +49,32 @@ abstract class Experiment(){
 case class Load(ds: Datasource) extends Experiment{
 
   override def run(): Experiment = {
+    var sizeMb = -1.0
     val start = System.currentTimeMillis()
     val df = ds match {
-      case Json(path) => Experiment.sqlContext.read.json(path)
-      case Parquet(path) => Experiment.sqlContext.read.parquet(path)
+      case Json(path) => {
+        val df = Experiment.sqlContext.read.json(path)
+        sizeMb = Experiment.fs.getContentSummary(new Path(ds.path)).getSpaceConsumed / 1000000.0
+        df
+      }
+      case Parquet(path) => {
+        sizeMb = Experiment.fs.getContentSummary(new Path(ds.path)).getSpaceConsumed / 1000000.0
+        val df = Experiment.sqlContext.read.parquet(path)
+        df
+      }
       case JDBC(host, db, table) => {
         val jdbcURL= s"jdbc:postgresql://${host}:5432/${db}?user=postgres&password=postgres"
         val props = new Properties()
         props.setProperty("driver", "org.postgresql.Driver")
-        Experiment.sqlContext.read.jdbc(jdbcURL, table, props)
+        val df = Experiment.sqlContext.read.jdbc(jdbcURL, table, props)
+        df
       }
     }
-    val size = Experiment.fs.getContentSummary(new Path(ds.path)).getSpaceConsumed / 1000000.0
+
     val end = (System.currentTimeMillis() - start) / 1000.0
 
     result.put("time", end)
-    result.put("size", size)
+    result.put("size", sizeMb)
     result.put("datasource", ds)
     result.put("rows", df.count)
     result.put("columns", df.columns.size)
@@ -91,9 +112,13 @@ case class Move(src: Datasource, dst: Datasource) extends Experiment{
   */
 
 object Experiment{
+  val sconf = new SparkConf().setJars(Seq("postgres.jar"))
   val sqlContext = SparkSession.builder()
+    .config(sconf)
     .master("spark://master:7077")
-    .config("spark.eventLog.enabled", "true").appName("Big Data Project").getOrCreate()
+    .config("spark.eventLog.enabled", "true")
+    .appName("Big Data Project")
+    .getOrCreate()
 
   private lazy val conf = new Configuration()
   conf.set("fs.defaultFS", "hdfs://master:9000")
@@ -114,6 +139,12 @@ object Experiment{
       val exp = source match{
         case "parquet" => Parquet(path)
         case "json" => Json(path)
+        case "jdbc" => {
+          val host = path
+          val db = params(2)
+          val table = params(3)
+          JDBC(host, db, table)
+        }
       }
       Load(exp).run()
     }
@@ -121,3 +152,4 @@ object Experiment{
     exps.foreach(experiment => println(experiment.getCommaSeperatedResult()))
   }
 }
+
