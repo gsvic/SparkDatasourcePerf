@@ -6,7 +6,7 @@ import java.util.Properties
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{Path, FileSystem}
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.mutable.HashMap
 
@@ -111,13 +111,22 @@ case class Move(src: Datasource, dst: Datasource) extends Experiment{
   */
 
 object Experiment{
-  val sconf = new SparkConf().setJars(Seq("postgres.jar"))
-  val sqlContext = SparkSession.builder()
-    .config(sconf)
-    .master("spark://master:7077")
-    .config("spark.eventLog.enabled", "true")
-    .appName("Big Data Project")
-    .getOrCreate()
+  var sqlContext = null.asInstanceOf[SparkSession]
+
+  def init(sqlContext: SparkSession = null): Unit = {
+    if (sqlContext != null){
+      this.sqlContext = sqlContext
+    }
+    else {
+      val sconf = new SparkConf().setJars(Seq("postgres.jar"))
+      this.sqlContext = SparkSession.builder()
+        .config(sconf)
+        .master("spark://master:7077")
+        .config("spark.eventLog.enabled", "true")
+        .appName("Big Data Project")
+        .getOrCreate()
+    }
+  }
 
   private lazy val conf = new Configuration()
   conf.set("fs.defaultFS", "hdfs://master:9000")
