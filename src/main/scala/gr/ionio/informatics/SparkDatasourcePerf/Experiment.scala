@@ -1,6 +1,5 @@
 package gr.ionio.informatics.SparkDatasourcePerf
 
-import java.io.BufferedWriter
 import java.nio.file.{StandardOpenOption, Paths, Files}
 import java.util.Properties
 
@@ -32,7 +31,7 @@ abstract class Experiment(){
     csr
   }
 
-  def writeToDisk() = {
+  def writeToDisk(): Unit = {
     if (!Files.exists(Paths.get("results.txt")))
       Files.createFile(Paths.get("results.txt"))
     Files.write(Paths.get("results.txt"), s"${this.getCommaSeperatedResult()}\n".getBytes(), StandardOpenOption.APPEND)
@@ -123,7 +122,7 @@ object Experiment{
   private lazy val conf = new Configuration()
   conf.set("fs.defaultFS", "hdfs://master:9000")
 
-  lazy val fs = FileSystem.get(Experiment.conf)
+  val fs = FileSystem.get(Experiment.conf)
 
   /**
     *

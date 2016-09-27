@@ -1,7 +1,5 @@
 package gr.ionio.informatics.SparkDatasourcePerf
 
-import org.apache.spark.sql.DataFrame
-
 /**
   * Created by vic on 19/9/2016.
   */
