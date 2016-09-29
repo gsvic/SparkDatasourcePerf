@@ -24,8 +24,11 @@ object Main extends App{
 
 object app{
   Experiment
-  val sampleExps = (src: String, scale: Int)=> {s"hdfs://master:9000/tpch/tpch_${src}_${scale}/nation"}
-  val results = Seq(1,1,5,20,50).map{ scale =>
-    (new Load(Parquet(sampleExps("parquet", scale)))).run().writeToDisk()
+  val sampleExps = (src: String, table: String, scale: Int)=> {s"hdfs://master:9000/tpch/tpch_${src}_${scale}/${table}"}
+  val tables = Seq("customer", "nation", "region", "part", "partsupp", "orders", "lineitem")
+  tables.foreach { table =>
+    Seq(1, 5, 20, 50).map { scale =>
+      (new Load(Parquet(sampleExps("parquet", table, scale)))).run().writeToDisk()
+    }
   }
 }
