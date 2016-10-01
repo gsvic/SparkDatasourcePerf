@@ -1,12 +1,12 @@
 package gr.ionio.informatics.SparkDatasourcePerf
 
-import java.nio.file.{StandardOpenOption, Paths, Files}
+import java.nio.file.{Files, Paths, StandardOpenOption}
 import java.util.Properties
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{Path, FileSystem}
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{SQLContext, SparkSession}
+import org.apache.spark.sql.{DataFrame, SQLContext, SparkSession}
 
 import scala.collection.mutable.HashMap
 
@@ -16,6 +16,7 @@ import scala.collection.mutable.HashMap
 
 abstract class Experiment(){
   def run(): Experiment
+
   def getCommaSeperatedResult(): String = {
     var csr = ""
     val iter = result.values.iterator
@@ -46,8 +47,9 @@ abstract class Experiment(){
   */
 
 case class Load(ds: Datasource) extends Experiment{
-
+  println(this)
   override def run(): Experiment = {
+
     var sizeMb = -1.0
     val start = System.currentTimeMillis()
     val df = ds match {
@@ -61,13 +63,14 @@ case class Load(ds: Datasource) extends Experiment{
         val df = Experiment.sqlContext.read.parquet(path)
         df
       }
-      case JDBC(host, db, table) => {
+      case Postgres(host, db, table) => {
         val jdbcURL= s"jdbc:postgresql://${host}:5432/${db}?user=postgres&password=postgres"
         val props = new Properties()
         props.setProperty("driver", "org.postgresql.Driver")
         val df = Experiment.sqlContext.read.jdbc(jdbcURL, table, props)
         df
       }
+      case _ => null.asInstanceOf[DataFrame]
     }
 
     val end = (System.currentTimeMillis() - start) / 1000.0
@@ -93,6 +96,7 @@ case class Move(src: Datasource, dst: Datasource) extends Experiment{
   val srcDF = src match{
     case Json(path) => Experiment.sqlContext.read.json(path)
     case Parquet(path) => Experiment.sqlContext.read.parquet(path)
+
   }
   if (Experiment.fs.exists(new Path(dst.path))){
     Experiment.fs.delete(new Path(dst.path), true)
@@ -151,7 +155,7 @@ object Experiment{
           val host = path
           val db = params(2)
           val table = params(3)
-          JDBC(host, db, table)
+          Postgres(host, db, table)
         }
       }
       Load(exp).run()
