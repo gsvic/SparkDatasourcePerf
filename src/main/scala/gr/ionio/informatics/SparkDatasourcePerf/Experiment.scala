@@ -12,9 +12,11 @@ import scala.collection.mutable.HashMap
 
 /**
   * An abstract definition of an experiment
-  * */
+  */
 
 abstract class Experiment(){
+  val result: HashMap[String, Any] =  new HashMap[String, Any]()
+
   def run(): Experiment
 
   def getCommaSeperatedResult(): String = {
@@ -37,7 +39,6 @@ abstract class Experiment(){
       Files.createFile(Paths.get("results.txt"))
     Files.write(Paths.get("results.txt"), s"${this.getCommaSeperatedResult()}\n".getBytes(), StandardOpenOption.APPEND)
   }
-  val result: HashMap[String, Any] =  new HashMap[String, Any]()
 }
 
 /**
@@ -47,9 +48,8 @@ abstract class Experiment(){
   */
 
 case class Load(ds: Datasource) extends Experiment{
-  println(this)
-  override def run(): Experiment = {
 
+  override def run(): Experiment = {
     var sizeMb = -1.0
     val start = System.currentTimeMillis()
     val df = ds match {
